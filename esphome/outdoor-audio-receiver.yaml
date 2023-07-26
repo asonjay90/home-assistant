@@ -1,0 +1,307 @@
+esphome:
+  name: outside-audio-controller
+  friendly_name: outside-audio-controller
+  includes:
+    - uart_read_line_sensor.h
+
+esp8266:
+  board: nodemcu
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "nt7fQvJd3JuMC7w+XwE4tYq/+jW2ZvwoW5WALW+W8Dw="
+
+ota:
+  password: "6ba11db16aee93bfefbab3afb0f41322"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Outside-Audio-Controller"
+    password: "UDcZpxwynFxn"
+
+captive_portal:
+
+uart:
+  - id: uart_bus
+    tx_pin: GPIO15
+    rx_pin: GPIO13
+    baud_rate: 9600
+    debug:
+      direction: BOTH
+      dummy_receiver: false
+      after:
+        delimiter: "\n"
+      sequence:
+        - lambda: UARTDebug::log_string(direction, bytes);
+
+text_sensor:
+- platform: custom
+  lambda: |-
+    auto my_custom_sensor = new UartReadLineSensor(id(uart_bus));
+    App.register_component(my_custom_sensor);
+    return {my_custom_sensor};
+  text_sensors:
+    id: uart_readline
+    on_value:
+      - lambda: |-
+          auto serial_line = id(uart_readline).state;
+          //-------------------------------------------//
+          //            Update POWER
+          //-------------------------------------------//
+          // Main
+          if (serial_line == "PWR0") {
+            id(power_zone_main).publish_state(true);
+          }
+          if (serial_line == "PWR1") {
+            id(power_zone_main).publish_state(false);
+          }
+          if (serial_line == "@WB!") { // This is sent when completely off
+            id(power_zone_main).publish_state(false);
+          }
+          // Zone 2
+          if (serial_line == "APR0") {
+            id(power_zone_2).publish_state(true);
+          }
+          if (serial_line == "APR1") {
+            id(power_zone_2).publish_state(false);
+          }
+          // Zone 3
+          if (serial_line == "BPR0") {
+            id(power_zone_3).publish_state(true);
+          }
+          if (serial_line == "BPR1") {
+            id(power_zone_3).publish_state(false);
+          }
+          //-------------------------------------------//
+          //             Update INPUT
+          //-------------------------------------------//
+          // Main
+          if (serial_line == "FN01") { // INPUT CD
+            id(input_zone_main).publish_state("Chromecast_1");
+          }
+          if (serial_line == "FN03") { // INPUT CD-R
+            id(input_zone_main).publish_state("Chromecast_2");
+          }
+          if (serial_line == "FN04") { // INPUT DVD
+            id(input_zone_main).publish_state("Bluetooth");
+          }
+          // Zone 2
+          if (serial_line == "Z2F01") {
+            id(input_zone_2).publish_state("Chromecast_1");
+          }
+          if (serial_line == "Z2F03") {
+            id(input_zone_2).publish_state("Chromecast_2");
+          }
+          if (serial_line == "Z2F04") {
+            id(input_zone_2).publish_state("Bluetooth");
+          }
+          // Zone 3
+          if (serial_line == "Z3F01") {
+            id(input_zone_3).publish_state("Chromecast_1");
+          }
+          if (serial_line == "Z3F03") {
+            id(input_zone_3).publish_state("Chromecast_2");
+          }
+          if (serial_line == "Z3F04") {
+            id(input_zone_3).publish_state("Bluetooth");
+          }
+          //-------------------------------------------//
+          //              Update VOLUME
+          //-------------------------------------------//
+          // Main
+          if (serial_line.substr(0,3) == "VOL") {
+            float vol = stof(serial_line.substr(3,3));
+            float vol_mapped = (vol / 185.0) * 100.0;
+            int vol_val = static_cast<int>(vol_mapped);
+            id(volume_zone_main).publish_state(vol_val);
+          }
+          // Zone 2
+          if (serial_line.substr(0,2) == "ZV") {
+            float vol = stof(serial_line.substr(2,3));
+            float vol_mapped = (vol / 81.0) * 100.0;
+            int vol_val = static_cast<int>(vol_mapped);
+            id(volume_zone_2).publish_state(vol_val);
+          }
+          // Zone 3
+          if (serial_line.substr(0,2) == "YV") {
+            float vol = stof(serial_line.substr(2,3));
+            float vol_mapped = (vol / 81.0) * 100.0;
+            int vol_val = static_cast<int>(vol_mapped);
+            id(volume_zone_3).publish_state(vol_val);
+          }
+
+switch:
+  - platform: template
+    name: "Main Power"
+    id: power_zone_main
+    optimistic: true
+    turn_on_action:
+      # Send POWER ON twice to wake CPU and turn on
+      - uart.write: "po\r"
+      - delay: 150ms
+      - uart.write: "po\r"
+      - delay: 150ms
+      # Request current POWER
+      - uart.write: "?p\r"
+      - delay: 150ms
+      # Request current VOLUME
+      - uart.write: "?v\r"
+      - delay: 150ms
+      # Request current INPUT
+      - uart.write: "?f\r"
+    turn_off_action:
+      - uart.write: "pf\r"
+
+  - platform: template
+    name: "Zone 2 Power"
+    id: power_zone_2
+    optimistic: true
+    turn_on_action:
+      # Send POWER ON twice to wake CPU and turn on
+      - uart.write: "apo\r"
+      - delay: 150ms
+      - uart.write: "apo\r"
+      - delay: 150ms
+      # Request current POWER
+      - uart.write: "?ap\r"
+      - delay: 150ms
+      # Request current VOLUME
+      - uart.write: "?zv\r"
+      - delay: 150ms
+      # Request current INPUT
+      - uart.write: "?zs\r"
+    turn_off_action:
+      - uart.write: "apf\r"
+
+  - platform: template
+    name: "Zone 3 Power"
+    id: power_zone_3
+    optimistic: true
+    turn_on_action:
+      # Send POWER ON twice to wake CPU and turn on
+      - uart.write: "bpo\r"
+      - delay: 150ms
+      - uart.write: "bpo\r"
+      - delay: 150ms
+      # Request current POWER
+      - uart.write: "?bp\r"
+      - delay: 150ms
+      # Request current VOLUME
+      # Send VOL DOWN because zone 3 volume request errors
+      - uart.write: "yd\r"
+      - delay: 150ms
+      # Request current INPUT
+      - uart.write: "?zt\r"
+    turn_off_action:
+      - uart.write: "bpf\r"
+
+select:
+  - platform: template
+    name: "Main Zone Input"
+    id: input_zone_main
+    options:
+     - "Chromecast_1"
+     - "Chromecast_2"
+     - "Bluetooth"
+     - "Unknown"
+    initial_option: "Unknown"
+    optimistic: false
+    set_action:
+      - lambda: |-
+          if (x == "Chromecast_1") {
+            id(uart_bus).write_str("01FN\r"); // INPUT CD
+          }
+          if (x == "Chromecast_2") {
+            id(uart_bus).write_str("03FN\r"); // INPUT CD-R
+          }
+          if (x == "Bluetooth") {
+            id(uart_bus).write_str("04FN\r"); // INPUT DVD
+          }
+  - platform: template
+    name: "Zone 2 Input"
+    id: input_zone_2
+    options:
+     - "Chromecast_1"
+     - "Chromecast_2"
+     - "Bluetooth"
+     - "Unknown"
+    initial_option: "Unknown"
+    optimistic: false
+    set_action:
+      - lambda: |-
+          if (x == "Chromecast_1") {
+            id(uart_bus).write_str("01ZS\r");
+          }
+          if (x == "Chromecast_2") {
+            id(uart_bus).write_str("03ZS\r");
+          }
+          if (x == "Bluetooth") {
+            id(uart_bus).write_str("04ZS\r");
+          }
+  - platform: template
+    name: "Zone 3 Input"
+    id: input_zone_3
+    options:
+     - "Chromecast_1"
+     - "Chromecast_2"
+     - "Bluetooth"
+     - "Unknown"
+    initial_option: "Unknown"
+    optimistic: false
+    set_action:
+      - lambda: |-
+          if (x == "Chromecast_1") {
+            id(uart_bus).write_str("01ZT\r");
+          }
+          if (x == "Chromecast_2") {
+            id(uart_bus).write_str("03ZT\r");
+          }
+          if (x == "Bluetooth") {
+            id(uart_bus).write_str("04ZT\r");
+          }
+
+number:
+  - platform: template
+    name: "Main Zone Volume"
+    id: volume_zone_main
+    icon: "mdi:volume-high"
+    step: 1
+    min_value: 0
+    max_value: 100
+    set_action:
+      - lambda: |-
+          int mapped_value = static_cast<int>((x/100) * 185);
+          std::string vol_str = std::to_string(mapped_value) + "VL\r";
+          id(uart_bus).write_str(vol_str.c_str());
+  - platform: template
+    name: "Zone 2 Volume"
+    id: volume_zone_2
+    icon: "mdi:volume-high"
+    step: 1
+    min_value: 0
+    max_value: 100
+    set_action:
+      - lambda: |-
+          int mapped_value = static_cast<int>((x/100) * 81);
+          std::string vol_str = std::to_string(mapped_value) + "ZV\r";
+          id(uart_bus).write_str(vol_str.c_str());
+  - platform: template
+    name: "Zone 3 Volume"
+    id: volume_zone_3
+    icon: "mdi:volume-high"
+    step: 1
+    min_value: 0
+    max_value: 100
+    set_action:
+      - lambda: |-
+          int mapped_value = static_cast<int>((x/100) * 81);
+          std::string vol_str = std::to_string(mapped_value) + "YV\r";
+          id(uart_bus).write_str(vol_str.c_str());

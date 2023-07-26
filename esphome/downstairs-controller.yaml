@@ -1,0 +1,212 @@
+esp8266:
+  board: nodemcuv2
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+ota:
+  password: "e2f1d4f34a127e8e64218c49d8ff9bdf"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Downstairs-Controller"
+    password: "Vw8klXIDxpBt"
+
+captive_portal:
+
+esphome:
+  name: downstairs-controller
+  on_loop:
+    then:
+      # Backyard Lights
+      - if:
+          condition:
+            binary_sensor.is_on: backyard_lights
+          then:
+            output.turn_on: led_7
+          else:
+            output.turn_off: led_7
+      # Motion Lights
+      - if:
+          condition:
+            binary_sensor.is_on: motion_lights
+          then:
+            output.turn_on: led_6
+          else:
+            output.turn_off: led_6
+      # Garage
+      - if:
+          condition:
+            or:
+            - text_sensor.state:
+                id: garage_door
+                state: 'open'
+            - text_sensor.state:
+                id: garage_door
+                state: 'opening'
+          then:
+            output.turn_on: led_5
+          else:
+            output.turn_off: led_5
+      # Washer
+      - if:
+          condition:
+            text_sensor.state:
+              id: washer_power
+              state: 'on'
+          then:
+            - lambda: |-
+                if ((id(washer_state).state) == "Washing" or (id(washer_state).state) == "Rinsing") {
+                  id(led_1).turn_on();
+                }
+                else if (id(washer_state).state == "Spinning") {
+                  id(led_1).turn_off();
+                  id(led_8).turn_on();              
+                }
+                else {
+                  id(led_1).turn_off();
+                  id(led_8).turn_off();
+                  id(led_2).turn_on();
+                }
+          else:
+            - output.turn_off: led_1
+            - output.turn_off: led_2
+            - output.turn_off: led_8
+      # Dryer
+      - if:
+          condition:
+            text_sensor.state:
+              id: dryer_power
+              state: 'on'
+          then:
+            - lambda: |-
+                if ((id(dryer_state).state) == "Drying" or (id(dryer_state).state) == "Cooling") {
+                  id(led_3).turn_on();
+                }
+                else {
+                  id(led_3).turn_off();
+                  id(led_4).turn_on();
+                }
+          else:
+            - output.turn_off: led_3
+            - output.turn_off: led_4
+
+binary_sensor:
+  - platform: gpio
+    id: button_1
+    pin:
+      number: 1
+      mode: INPUT_PULLUP
+      inverted: True
+    on_press:
+      then:
+      - homeassistant.service:
+          service: light.toggle
+          data:
+            entity_id: light.backyard_lights
+  - platform: gpio
+    id: button_2
+    pin:
+      number: 3
+      mode: INPUT_PULLUP
+      inverted: True
+    on_press:
+      then:
+      - homeassistant.service:
+          service: light.toggle
+          data:
+            entity_id: light.motion_lights
+  - platform: gpio
+    id: button_3
+    pin:
+      number: 13
+      mode: INPUT_PULLUP
+      inverted: True
+    on_press:
+      then:
+        - if:
+            condition:
+              text_sensor.state:
+                id: garage_door
+                state: 'closed'
+            then:
+            - homeassistant.service:
+                service: cover.open_cover
+                data:
+                  entity_id: cover.garage_door
+            else:
+            - homeassistant.service:
+                service: cover.close_cover
+                data:
+                  entity_id: cover.garage_door
+  - platform: homeassistant
+    entity_id: light.backyard_lights
+    id: backyard_lights
+  - platform: homeassistant
+    entity_id: light.motion_lights
+    id: motion_lights
+
+text_sensor:
+  - platform: homeassistant
+    entity_id: cover.garage_door
+    id: garage_door
+  - platform: homeassistant
+    entity_id: sensor.washer
+    id: washer_power
+  - platform: homeassistant
+    entity_id: sensor.washer
+    id: washer_state
+    attribute: run_state
+  - platform: homeassistant
+    entity_id: sensor.dryer
+    id: dryer_power
+  - platform: homeassistant
+    entity_id: sensor.dryer
+    id: dryer_state
+    attribute: run_state
+
+output:
+  - platform: gpio
+    id: led_1
+    pin:
+      number: D0
+      inverted: True
+  - platform: gpio
+    id: led_2
+    pin:
+      number: D1
+      inverted: True
+  - platform: gpio
+    id: led_3
+    pin:
+      number: D2
+      inverted: True
+  - platform: gpio
+    id: led_4
+    pin:
+      number: D3
+      inverted: True
+  - platform: gpio
+    id: led_5
+    pin:
+      number: D4
+  - platform: gpio
+    id: led_6
+    pin:
+      number: D5
+  - platform: gpio
+    id: led_7
+    pin:
+      number: D6
+  - platform: gpio
+    id: led_8
+    pin:
+      number: D8
+      inverted: True
